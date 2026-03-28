@@ -1,0 +1,27 @@
+{
+  "name": "npm-offline-uploader",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "format": "prettier --write \"src/**/*.{ts,js}\"",
+    "start": "tsx --env-file=.env src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.9.0",
+    "inquirer": "^12.6.1",
+    "semver": "^7.7.1",
+    "tar": "^7.4.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^25.5.0",
+    "@types/semver": "^7.5.8",
+    "@types/tar": "^6.1.13",
+    "prettier": "3.8.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.9.3"
+  }
+}
