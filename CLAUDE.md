@@ -45,9 +45,13 @@ cp .env.template .env   # first-time setup — fill in Nexus credentials
 npm install
 npm run dev             # run with tsx watch (auto-reloads)
 npm run start           # run once
+npm run dev:force       # run with tsx watch, overwriting existing packages
+npm run start:force     # run once, overwriting existing packages
 npm run build           # compile to dist/
 npm run format          # format src/ with Prettier
 ```
+
+The `:force` variants skip the existence check and overwrite packages already in Nexus. Use them to repair a repository that contains corrupted tarballs from a previous bad upload.
 
 ## Environment variables
 
@@ -83,7 +87,7 @@ input/          — drop .zip archives here before running
 **For each package in `metadata.packages`:**
 
 1. **Existence check** — `GET /repository/<repo>/<name>` (full packument), checks `response.versions[version]`.
-   Skip if already present. This protects SHA integrity; overwriting an existing package can corrupt the stored checksum and break `package-lock.json` for offline consumers.
+   Skip if already present, unless `--force` / `-f` is passed. Skipping by default protects SHA integrity; overwriting an existing package can corrupt the stored checksum and break `package-lock.json` for offline consumers. Use `--force` only to repair a repository that already contains corrupted data.
    The version-specific manifest endpoint (`GET /<name>/<version>`) is not used — Nexus Community Edition hosted repos return 404 for it unconditionally, regardless of whether the package exists.
    The REST search API (`/service/rest/v1/search`) is also avoided — its index is asynchronous and can return stale results.
 
@@ -108,7 +112,7 @@ See `encodePackageName()` in `src/upload.ts`.
 - **`adm-zip` for the outer ZIP** — synchronous, simple API; no streaming needed.
 - **`tar` for inner tgz manipulation** — only package used that correctly handles gzipped tar round-trips. `tar` v7 ships its own types and is ESM-only; use named imports (`import { x, c } from "tar"`) — the default import is `undefined` in v7.
 - **Latest version is zip-local then Nexus-guarded** — `buildLatestVersionMap` determines the highest *stable* (non-prerelease) version for each package name in the zip; pre-release versions are skipped entirely because npm convention reserves `latest` for stable releases. Before tagging, `getNexusLatestVersion` determines the effective current latest in Nexus: it uses `dist-tags.latest` if set and valid, then falls back to the highest stable version in the packument's `versions` map. The fallback prevents tagging over a higher version that was loaded into Nexus by another tool without setting the `latest` tag. The tag is only written if the candidate is strictly greater than the effective Nexus latest.
-- **Temp directory cleanup is always guaranteed** — `stripPublishConfig` and `upload` both use `try/finally` with `fs.rmSync(..., { recursive: true, force: true })`.
+- **Temp directory cleanup is always guaranteed** — `upload` uses `try/finally` with `fs.rmSync(..., { recursive: true, force: true })`.
 - **HTTP triggers a warning, not an error** — internal Nexus instances may not have TLS configured; the tool warns but does not block. Prefer HTTPS in production.
 - **ZIP path traversal is rejected pre-extraction** — entry names are resolved and checked against `tmpDir` before `extractAllTo` is called, so no malicious path is ever written to disk.
 - **No free-text path input** — the prompt lists only files from `input/`, eliminating user-supplied path risks entirely.

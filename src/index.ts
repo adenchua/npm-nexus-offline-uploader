@@ -33,10 +33,18 @@ async function main() {
     },
   ]);
 
-  console.log("\nUploading packages to Nexus...\n");
+  const force = process.argv.includes("--force") || process.argv.includes("-f");
+
+  if (force) {
+    console.log("\nWarning: --force is set — existing packages will be overwritten.\n");
+  } else {
+    console.log("");
+  }
+
+  console.log("Uploading packages to Nexus...\n");
 
   try {
-    const result = await upload(zipPath);
+    const result = await upload(zipPath, { force });
 
     console.log(`\nDone. Succeeded: ${result.succeeded}  Skipped: ${result.skipped}  Failed: ${result.failed}`);
 

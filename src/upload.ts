@@ -164,7 +164,7 @@ function resolveEnv(): { nexusUrl: string; repository: string; username: string;
   return { nexusUrl: nexusUrl!, repository: repository!, username: username!, password: password! };
 }
 
-export async function upload(zipPath: string): Promise<UploadResult> {
+export async function upload(zipPath: string, options: { force?: boolean } = {}): Promise<UploadResult> {
   const { nexusUrl, repository, username, password } = resolveEnv();
   const auth = Buffer.from(`${username}:${password}`).toString("base64");
   const endpoint = `${nexusUrl}/service/rest/v1/components?repository=${repository}`;
@@ -200,11 +200,13 @@ export async function upload(zipPath: string): Promise<UploadResult> {
     const result: UploadResult = { succeeded: 0, skipped: 0, failed: 0, errors: [] };
 
     for (const pkg of metadata.packages) {
-      const exists = await packageExists(nexusUrl, repository, auth, pkg.name, pkg.version);
-      if (exists) {
-        console.log(`  ~ ${pkg.name}@${pkg.version} — already exists, skipping`);
-        result.skipped++;
-        continue;
+      if (!options.force) {
+        const exists = await packageExists(nexusUrl, repository, auth, pkg.name, pkg.version);
+        if (exists) {
+          console.log(`  ~ ${pkg.name}@${pkg.version} — already exists, skipping`);
+          result.skipped++;
+          continue;
+        }
       }
 
       const tgzPath = path.join(tmpDir, pkg.tarball);
