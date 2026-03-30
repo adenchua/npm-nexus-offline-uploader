@@ -82,9 +82,10 @@ input/          — drop .zip archives here before running
 
 **For each package in `metadata.packages`:**
 
-1. **Existence check** — `GET /repository/<repo>/<name>/<version>` (npm registry protocol).
+1. **Existence check** — `GET /repository/<repo>/<name>` (full packument), checks `response.versions[version]`.
    Skip if already present. This protects SHA integrity; overwriting an existing package can corrupt the stored checksum and break `package-lock.json` for offline consumers.
-   The REST search API (`/service/rest/v1/search`) is intentionally avoided here — its index is asynchronous and can return stale results, causing false negatives that allow re-uploads.
+   The version-specific manifest endpoint (`GET /<name>/<version>`) is not used — Nexus Community Edition hosted repos return 404 for it unconditionally, regardless of whether the package exists.
+   The REST search API (`/service/rest/v1/search`) is also avoided — its index is asynchronous and can return stale results.
 
 2. **Tarball path check** — the resolved path of `pkg.tarball` is verified to remain inside `tmpDir` before the file is read. Malformed `tarball` values in `metadata.json` cannot escape the temp directory.
 

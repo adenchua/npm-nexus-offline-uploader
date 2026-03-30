@@ -94,13 +94,16 @@ async function tagAsLatest(nexusUrl: string, repository: string, auth: string, n
 }
 
 async function packageExists(nexusUrl: string, repository: string, auth: string, name: string, version: string): Promise<boolean> {
-  // Use the npm registry protocol endpoint rather than the REST search API.
-  // The search index is updated asynchronously and can return stale results,
-  // causing false negatives that allow existing packages to be re-uploaded.
-  const url = `${nexusUrl}/repository/${repository}/${encodePackageName(name)}/${version}`;
+  // Query the full packument rather than the version-specific manifest endpoint.
+  // Nexus Community Edition hosted npm repos don't expose GET /<name>/<version> —
+  // they return 404 for every such request regardless of whether the package exists.
+  // The full packument (GET /<name>) is always supported and contains a `versions` map.
+  const url = `${nexusUrl}/repository/${repository}/${encodePackageName(name)}`;
   try {
-    await axios.get(url, { headers: { Authorization: `Basic ${auth}` } });
-    return true;
+    const response = await axios.get<{ versions?: Record<string, unknown> }>(url, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    return version in (response.data.versions ?? {});
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 404) {
       return false;
