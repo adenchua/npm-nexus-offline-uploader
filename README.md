@@ -40,7 +40,7 @@ For each package in `metadata.json`, the uploader:
 1. **Skips** packages already present in Nexus — prevents SHA checksum corruption that can break `package-lock.json` for offline consumers
 2. **Strips `publishConfig`** from the embedded `package.json` before uploading — removes external registry references that would otherwise be stored in Nexus metadata and misdirect npm clients
 3. **Uploads** the tarball to Nexus via the REST API using `multipart/form-data`
-4. **Tags as `latest`** if the version is the highest semver for that package name within the archive — a tagging failure emits a `! warning` line but does not count the package as failed
+4. **Tags as `latest`** if the version is the highest *stable* semver for that package name within the archive — pre-release versions (e.g. `1.0.0-beta`) are never tagged as `latest`. The tag is also skipped if a higher version already exists in Nexus, even if it was loaded without a `latest` tag. A tagging failure emits a `! warning` line but does not count the package as failed
 
 ## Prerequisites
 

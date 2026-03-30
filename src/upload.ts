@@ -71,10 +71,13 @@ function encodePackageName(name: string): string {
   return name;
 }
 
-// Builds a map of package name → highest semver version from the metadata.
+// Builds a map of package name → highest stable (non-prerelease) semver version from the metadata.
 function buildLatestVersionMap(packages: PackageEntry[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const pkg of packages) {
+    if (semver.prerelease(pkg.version) !== null) {
+      continue;
+    }
     const current = map.get(pkg.name);
     if (!current || semver.gt(pkg.version, current)) {
       map.set(pkg.name, pkg.version);
@@ -114,14 +117,24 @@ async function packageExists(nexusUrl: string, repository: string, auth: string,
 }
 
 async function getNexusLatestVersion(nexusUrl: string, repository: string, auth: string, name: string): Promise<string | null> {
-  // Fetch the package document from the npm registry endpoint to read the current
-  // dist-tags.latest. Returns null if the package doesn't exist yet in Nexus.
+  // Fetch the packument from Nexus to determine the effective "current latest" version.
+  // Priority order:
+  //   1. dist-tags.latest if it is set and is a valid semver string.
+  //   2. Highest stable version in the `versions` map (ignores pre-releases).
+  // Returns null only if the package does not exist in Nexus yet (404).
   const url = `${nexusUrl}/repository/${repository}/${encodePackageName(name)}`;
   try {
-    const response = await axios.get<{ "dist-tags"?: { latest?: string } }>(url, {
+    const response = await axios.get<{ "dist-tags"?: { latest?: string }; versions?: Record<string, unknown> }>(url, {
       headers: { Authorization: `Basic ${auth}` },
     });
-    return response.data["dist-tags"]?.latest ?? null;
+    const tagged = response.data["dist-tags"]?.latest;
+    if (tagged && semver.valid(tagged)) {
+      return tagged;
+    }
+    // dist-tags.latest is absent or invalid. Fall back to the highest stable version
+    // present in the packument's `versions` map so we do not tag over an untagged release.
+    const knownVersions = Object.keys(response.data.versions ?? {});
+    return semver.maxSatisfying(knownVersions, "*") ?? null;
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 404) {
       return null;
@@ -238,7 +251,8 @@ export async function upload(zipPath: string): Promise<UploadResult> {
 
       // Tagging is intentionally outside the upload try/catch. A tagging failure must not
       // retroactively mark a successful upload as failed or double-count the package.
-      if (latestVersionMap.get(pkg.name) === pkg.version) {
+      // Pre-release versions are never tagged as latest (npm convention).
+      if (latestVersionMap.get(pkg.name) === pkg.version && !semver.prerelease(pkg.version)) {
         try {
           // Compare against Nexus's current latest before tagging — the zip may not
           // include all versions, so a higher version could already be tagged in Nexus.
