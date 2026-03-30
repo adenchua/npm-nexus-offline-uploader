@@ -82,8 +82,9 @@ input/          — drop .zip archives here before running
 
 **For each package in `metadata.packages`:**
 
-1. **Existence check** — `GET /service/rest/v1/search?repository=…&format=npm&name=…&version=…`
+1. **Existence check** — `GET /repository/<repo>/<name>/<version>` (npm registry protocol).
    Skip if already present. This protects SHA integrity; overwriting an existing package can corrupt the stored checksum and break `package-lock.json` for offline consumers.
+   The REST search API (`/service/rest/v1/search`) is intentionally avoided here — its index is asynchronous and can return stale results, causing false negatives that allow re-uploads.
 
 2. **Tarball path check** — the resolved path of `pkg.tarball` is verified to remain inside `tmpDir` before the file is read. Malformed `tarball` values in `metadata.json` cannot escape the temp directory.
 
@@ -91,7 +92,7 @@ input/          — drop .zip archives here before running
 
 4. **Upload** — `POST /service/rest/v1/components?repository=<repo>` with `npm.asset` as a `multipart/form-data` field using native `FormData`.
 
-5. **Latest tagging** — if the uploaded version is the highest semver for that package name *within the zip's metadata*, issues `PUT /repository/<repo>/<name>/-/dist-tags/latest`. "Latest" is determined locally from the metadata — no internet access required.
+5. **Latest tagging** — if the uploaded version is the highest semver for that package name *within the zip's metadata*, the tool fetches the package's current `dist-tags.latest` from Nexus (`GET /repository/<repo>/<name>`) and only issues `PUT /repository/<repo>/<name>/-/dist-tags/latest` if the new version is strictly greater. This prevents a zip containing an older version from downgrading the `latest` tag when a newer version already exists in Nexus. This runs in its own try/catch, separate from the upload block; a tagging failure prints a `! warning` line but does not mark the package as failed or increment `result.failed`.
 
 ### Scoped package encoding in URLs
 
@@ -104,8 +105,8 @@ See `encodePackageName()` in `src/upload.ts`.
 
 - **No `form-data` package** — Node 18+ ships native `FormData`; axios 1.x supports it directly.
 - **`adm-zip` for the outer ZIP** — synchronous, simple API; no streaming needed.
-- **`tar` for inner tgz manipulation** — only package used that correctly handles gzipped tar round-trips.
-- **Latest version is metadata-local** — determined by `semver.gt` across all entries with the same name in the zip, not by querying the public registry (offline environment assumption).
+- **`tar` for inner tgz manipulation** — only package used that correctly handles gzipped tar round-trips. `tar` v7 ships its own types and is ESM-only; use named imports (`import { x, c } from "tar"`) — the default import is `undefined` in v7.
+- **Latest version is zip-local then Nexus-guarded** — `buildLatestVersionMap` determines the candidate from the zip's metadata (no public registry needed). Before actually tagging, `getNexusLatestVersion` fetches the current `dist-tags.latest` from the local Nexus instance and skips the tag if a higher version is already there. This prevents older zips from downgrading an existing `latest` tag.
 - **Temp directory cleanup is always guaranteed** — `stripPublishConfig` and `upload` both use `try/finally` with `fs.rmSync(..., { recursive: true, force: true })`.
 - **HTTP triggers a warning, not an error** — internal Nexus instances may not have TLS configured; the tool warns but does not block. Prefer HTTPS in production.
 - **ZIP path traversal is rejected pre-extraction** — entry names are resolved and checked against `tmpDir` before `extractAllTo` is called, so no malicious path is ever written to disk.

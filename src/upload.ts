@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import semver from "semver";
-import tar from "tar";
+import { x as tarExtract, c as tarCreate } from "tar";
 
 interface PackageEntry {
   name: string;
@@ -35,7 +35,7 @@ async function stripPublishConfig(tgzPath: string, tmpDir: string): Promise<bool
   const extractDir = fs.mkdtempSync(path.join(tmpDir, "strip-"));
 
   try {
-    await tar.x({ file: tgzPath, cwd: extractDir });
+    await tarExtract({ file: tgzPath, cwd: extractDir });
 
     const pkgJsonPath = path.join(extractDir, "package", "package.json");
 
@@ -53,7 +53,7 @@ async function stripPublishConfig(tgzPath: string, tmpDir: string): Promise<bool
     delete pkgJson.publishConfig;
     fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2));
 
-    await tar.c({ gzip: true, file: tgzPath, cwd: extractDir }, ["package"]);
+    await tarCreate({ gzip: true, file: tgzPath, cwd: extractDir }, ["package"]);
     return true;
   } finally {
     fs.rmSync(extractDir, { recursive: true, force: true });
@@ -94,11 +94,37 @@ async function tagAsLatest(nexusUrl: string, repository: string, auth: string, n
 }
 
 async function packageExists(nexusUrl: string, repository: string, auth: string, name: string, version: string): Promise<boolean> {
-  const url = `${nexusUrl}/service/rest/v1/search?repository=${encodeURIComponent(repository)}&format=npm&name=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}`;
-  const response = await axios.get<{ items: unknown[] }>(url, {
-    headers: { Authorization: `Basic ${auth}` },
-  });
-  return response.data.items.length > 0;
+  // Use the npm registry protocol endpoint rather than the REST search API.
+  // The search index is updated asynchronously and can return stale results,
+  // causing false negatives that allow existing packages to be re-uploaded.
+  const url = `${nexusUrl}/repository/${repository}/${encodePackageName(name)}/${version}`;
+  try {
+    await axios.get(url, { headers: { Authorization: `Basic ${auth}` } });
+    return true;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      return false;
+    }
+    // Non-404 errors (network failure, 5xx, auth) propagate — don't silently re-upload.
+    throw err;
+  }
+}
+
+async function getNexusLatestVersion(nexusUrl: string, repository: string, auth: string, name: string): Promise<string | null> {
+  // Fetch the package document from the npm registry endpoint to read the current
+  // dist-tags.latest. Returns null if the package doesn't exist yet in Nexus.
+  const url = `${nexusUrl}/repository/${repository}/${encodePackageName(name)}`;
+  try {
+    const response = await axios.get<{ "dist-tags"?: { latest?: string } }>(url, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    return response.data["dist-tags"]?.latest ?? null;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 function resolveEnv(): { nexusUrl: string; repository: string; username: string; password: string } {
@@ -196,16 +222,32 @@ export async function upload(zipPath: string): Promise<UploadResult> {
         });
         console.log(`  ✓ ${pkg.name}@${pkg.version}`);
         result.succeeded++;
-
-        if (latestVersionMap.get(pkg.name) === pkg.version) {
-          await tagAsLatest(nexusUrl, repository, auth, pkg.name, pkg.version);
-          console.log(`    → tagged as latest`);
-        }
       } catch (err) {
-        const message = axios.isAxiosError(err) ? (err.response?.data ?? err.message) : String(err);
+        // Use || instead of ?? so an empty-string response body (Nexus sometimes returns "")
+        // falls through to err.message rather than producing a blank error line.
+        const message = axios.isAxiosError(err) ? (err.response?.data || err.message) : String(err);
         console.error(`  ✗ ${pkg.name}@${pkg.version} — ${message}`);
         result.failed++;
         result.errors.push({ name: pkg.name, version: pkg.version, message: String(message) });
+        // Skip tagging — the upload itself failed, so there is nothing to tag.
+        continue;
+      }
+
+      // Tagging is intentionally outside the upload try/catch. A tagging failure must not
+      // retroactively mark a successful upload as failed or double-count the package.
+      if (latestVersionMap.get(pkg.name) === pkg.version) {
+        try {
+          // Compare against Nexus's current latest before tagging — the zip may not
+          // include all versions, so a higher version could already be tagged in Nexus.
+          const nexusLatest = await getNexusLatestVersion(nexusUrl, repository, auth, pkg.name);
+          if (nexusLatest === null || semver.gt(pkg.version, nexusLatest)) {
+            await tagAsLatest(nexusUrl, repository, auth, pkg.name, pkg.version);
+            console.log(`    → tagged as latest`);
+          }
+        } catch (err) {
+          const message = axios.isAxiosError(err) ? (err.response?.data || err.message) : String(err);
+          console.warn(`    ! failed to tag ${pkg.name} as latest — ${message}`);
+        }
       }
     }
 
