@@ -9,6 +9,7 @@ function listZipFiles(inputDir: string): string[] {
       .readdirSync(inputDir)
       .filter((name) => name.toLowerCase().endsWith(".zip") && fs.statSync(path.join(inputDir, name)).isFile())
       .sort()
+      .reverse()
       .map((name) => path.join(inputDir, name));
   } catch {
     return [];

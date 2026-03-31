@@ -74,7 +74,7 @@ input/          — drop .zip archives here before running
 
 ### Entry point (`src/index.ts`)
 
-- `listZipFiles(inputDir)` reads `input/`, filters for `.zip` files (non-symlinks), returns sorted absolute paths
+- `listZipFiles(inputDir)` reads `input/`, filters for `.zip` files (non-symlinks), returns reverse-sorted absolute paths (Z→A, so the newest/latest-named file appears first in the prompt)
 - If no zips found, exits with a message
 - Presents a `list` prompt (basename as label, full path as value) — no free-text path input
 
