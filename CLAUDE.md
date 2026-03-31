@@ -6,10 +6,10 @@ CLI tool that uploads npm packages into a **Sonatype Nexus Repository Manager (C
 
 ## Input format
 
-The uploader consumes `.zip` archives dropped into the `input/` folder. Each archive must contain:
+The uploader consumes `.tgz` archives dropped into the `input/` folder. Each archive must contain:
 
 ```
-<any-name>.zip
+<any-name>.tgz
 ├── metadata.json
 ├── express-4.18.2.tgz
 ├── lodash-4.17.21.tgz
@@ -23,9 +23,9 @@ The uploader consumes `.zip` archives dropped into the `input/` folder. Each arc
 }
 ```
 
-- `packages[].tarball` — filename of the `.tgz` at the root of the zip
+- `packages[].tarball` — filename of the `.tgz` at the root of the archive
 - Scoped package tarball naming convention: `@babel/core@7.0.0` → `babel-core-7.0.0.tgz` (`@` removed, `/` replaced with `-`)
-- All filenames in `packages` must be present in the zip
+- All filenames in `packages` must be present in the archive
 
 ## Tech stack
 
@@ -33,10 +33,13 @@ The uploader consumes `.zip` archives dropped into the `input/` folder. Each arc
 - **Language:** TypeScript, compiled with `tsc`, run via `tsx`
 - **CLI:** `inquirer` for interactive prompts
 - **HTTP:** `axios`
-- **ZIP extraction:** `adm-zip` (outer `.zip`)
-- **Tarball manipulation:** `tar` (inner `.tgz` files for `publishConfig` stripping)
+- **Archive extraction:** `tar` (outer `.tgz` and inner `.tgz` files for `publishConfig` stripping)
 - **Version comparison:** `semver`
 - **Formatter:** Prettier (`printWidth: 120`, `trailingComma: all`, 2-space indent)
+
+## Rules
+
+- After modifying any TypeScript file, run `npm run build` to verify the project compiles without errors before considering the task done.
 
 ## Development commands
 
@@ -69,19 +72,19 @@ Loaded via `tsx --env-file=.env`. See `.env.template` for documented defaults.
 ```
 src/index.ts    — entry point: scans input/, inquirer list prompt → calls upload()
 src/upload.ts   — all upload logic (self-contained)
-input/          — drop .zip archives here before running
+input/          — drop .tgz archives here before running
 ```
 
 ### Entry point (`src/index.ts`)
 
-- `listZipFiles(inputDir)` reads `input/`, filters for `.zip` files (non-symlinks), returns reverse-sorted absolute paths (Z→A, so the newest/latest-named file appears first in the prompt)
-- If no zips found, exits with a message
+- `listTgzFiles(inputDir)` reads `input/`, filters for `.tgz` files (non-symlinks), returns reverse-sorted absolute paths (Z→A, so the newest/latest-named file appears first in the prompt)
+- If no tgz files found, exits with a message
 - Presents a `list` prompt (basename as label, full path as value) — no free-text path input
 
 ### Upload flow (`src/upload.ts`)
 
 **Before the loop:**
-- All ZIP entry names are resolved against `tmpDir` and verified to stay within it — rejects archives with path traversal entries (e.g. `../../etc/passwd`) before any file is written
+- The archive is extracted with `tarExtract({ file: archivePath, cwd: tmpDir })`. The `tar` package strips unsafe paths by default (`preservePaths: false`), preventing path traversal attacks (e.g. `../../etc/passwd`) without manual entry validation
 - `metadata.json` is parsed inside a try-catch; missing or malformed JSON throws immediately. The parsed object is validated to have a `packages` array before proceeding
 
 **For each package in `metadata.packages`:**
@@ -97,7 +100,7 @@ input/          — drop .zip archives here before running
 
 4. **Upload** — `POST /service/rest/v1/components?repository=<repo>` with `npm.asset` as a `multipart/form-data` field using native `FormData`.
 
-5. **Latest tagging** — if the uploaded version is the highest *stable* (non-prerelease) semver for that package name *within the zip's metadata*, the tool fetches the packument from Nexus (`GET /repository/<repo>/<name>`) and only issues `PUT /repository/<repo>/<name>/-/dist-tags/latest` if the new version is strictly greater than the effective Nexus latest. Pre-release versions (e.g. `1.0.0-beta`) are never tagged as `latest` — npm convention reserves that tag for stable releases. The effective Nexus latest is: `dist-tags.latest` if set and valid, otherwise the highest stable version found in the packument's `versions` map (guards against versions uploaded by other tools without a tag). This runs in its own try/catch, separate from the upload block; a tagging failure prints a `! warning` line but does not mark the package as failed or increment `result.failed`.
+5. **Latest tagging** — if the uploaded version is the highest *stable* (non-prerelease) semver for that package name *within the archive's metadata*, the tool fetches the packument from Nexus (`GET /repository/<repo>/<name>`) and only issues `PUT /repository/<repo>/<name>/-/dist-tags/latest` if the new version is strictly greater than the effective Nexus latest. Pre-release versions (e.g. `1.0.0-beta`) are never tagged as `latest` — npm convention reserves that tag for stable releases. The effective Nexus latest is: `dist-tags.latest` if set and valid, otherwise the highest stable version found in the packument's `versions` map (guards against versions uploaded by other tools without a tag). This runs in its own try/catch, separate from the upload block; a tagging failure prints a `! warning` line but does not mark the package as failed or increment `result.failed`.
 
 ### Scoped package encoding in URLs
 
@@ -109,10 +112,8 @@ See `encodePackageName()` in `src/upload.ts`.
 ## Key decisions
 
 - **No `form-data` package** — Node 18+ ships native `FormData`; axios 1.x supports it directly.
-- **`adm-zip` for the outer ZIP** — synchronous, simple API; no streaming needed.
-- **`tar` for inner tgz manipulation** — only package used that correctly handles gzipped tar round-trips. `tar` v7 ships its own types and is ESM-only; use named imports (`import { x, c } from "tar"`) — the default import is `undefined` in v7.
-- **Latest version is zip-local then Nexus-guarded** — `buildLatestVersionMap` determines the highest *stable* (non-prerelease) version for each package name in the zip; pre-release versions are skipped entirely because npm convention reserves `latest` for stable releases. Before tagging, `getNexusLatestVersion` determines the effective current latest in Nexus: it uses `dist-tags.latest` if set and valid, then falls back to the highest stable version in the packument's `versions` map. The fallback prevents tagging over a higher version that was loaded into Nexus by another tool without setting the `latest` tag. The tag is only written if the candidate is strictly greater than the effective Nexus latest.
+- **`tar` for both outer and inner archives** — handles gzipped tar round-trips for the outer `.tgz` input and for `publishConfig` stripping of inner package tarballs. `tar` v7 ships its own types and is ESM-only; use named imports (`import { x, c } from "tar"`) — the default import is `undefined` in v7. Path traversal protection is provided by tar's default `preservePaths: false` behaviour.
+- **Latest version is archive-local then Nexus-guarded** — `buildLatestVersionMap` determines the highest *stable* (non-prerelease) version for each package name in the archive; pre-release versions are skipped entirely because npm convention reserves `latest` for stable releases. Before tagging, `getNexusLatestVersion` determines the effective current latest in Nexus: it uses `dist-tags.latest` if set and valid, then falls back to the highest stable version in the packument's `versions` map. The fallback prevents tagging over a higher version that was loaded into Nexus by another tool without setting the `latest` tag. The tag is only written if the candidate is strictly greater than the effective Nexus latest.
 - **Temp directory cleanup is always guaranteed** — `upload` uses `try/finally` with `fs.rmSync(..., { recursive: true, force: true })`.
 - **HTTP triggers a warning, not an error** — internal Nexus instances may not have TLS configured; the tool warns but does not block. Prefer HTTPS in production.
-- **ZIP path traversal is rejected pre-extraction** — entry names are resolved and checked against `tmpDir` before `extractAllTo` is called, so no malicious path is ever written to disk.
 - **No free-text path input** — the prompt lists only files from `input/`, eliminating user-supplied path risks entirely.

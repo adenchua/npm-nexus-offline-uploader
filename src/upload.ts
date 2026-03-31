@@ -1,4 +1,3 @@
-import AdmZip from "adm-zip";
 import axios from "axios";
 import fs from "fs";
 import os from "os";
@@ -164,7 +163,7 @@ function resolveEnv(): { nexusUrl: string; repository: string; username: string;
   return { nexusUrl: nexusUrl!, repository: repository!, username: username!, password: password! };
 }
 
-export async function upload(zipPath: string, options: { force?: boolean } = {}): Promise<UploadResult> {
+export async function upload(archivePath: string, options: { force?: boolean } = {}): Promise<UploadResult> {
   const { nexusUrl, repository, username, password } = resolveEnv();
   const auth = Buffer.from(`${username}:${password}`).toString("base64");
   const endpoint = `${nexusUrl}/service/rest/v1/components?repository=${repository}`;
@@ -172,19 +171,12 @@ export async function upload(zipPath: string, options: { force?: boolean } = {})
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "npm-upload-"));
 
   try {
-    const zip = new AdmZip(zipPath);
-    const resolvedTmpDir = path.resolve(tmpDir);
-    for (const entry of zip.getEntries()) {
-      const resolvedEntry = path.resolve(tmpDir, entry.entryName);
-      if (!resolvedEntry.startsWith(resolvedTmpDir + path.sep)) {
-        throw new Error(`Zip contains unsafe entry path: ${entry.entryName}`);
-      }
-    }
-    zip.extractAllTo(tmpDir, true);
+    // tar strips unsafe paths by default (preservePaths: false), preventing path traversal attacks.
+    await tarExtract({ file: archivePath, cwd: tmpDir });
 
     const metadataPath = path.join(tmpDir, "metadata.json");
     if (!fs.existsSync(metadataPath)) {
-      throw new Error("metadata.json not found in zip — see README.md for the expected archive format.");
+      throw new Error("metadata.json not found in archive — see README.md for the expected archive format.");
     }
 
     let metadata: Metadata;

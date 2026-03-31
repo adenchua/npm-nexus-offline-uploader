@@ -4,10 +4,10 @@ CLI tool for uploading npm packages into a **Sonatype Nexus Repository Manager (
 
 ## Input format
 
-The uploader expects a `.zip` archive placed in the `input/` folder. The archive must contain:
+The uploader expects a `.tgz` archive placed in the `input/` folder. The archive must contain:
 
 ```
-<any-name>.zip
+<any-name>.tgz
 ├── metadata.json          ← required manifest
 ├── package-a-1.0.0.tgz
 ├── package-b-2.3.1.tgz
@@ -29,9 +29,9 @@ The uploader expects a `.zip` archive placed in the `input/` folder. The archive
 |--------------------|-----------------------------------------------------------------------------|
 | `packages[].name`  | npm package name — scoped names (`@scope/pkg`) are supported                |
 | `packages[].version` | semver version string                                                     |
-| `packages[].tarball` | filename of the corresponding `.tgz` at the root of the zip. For scoped packages, the `@` and `/` are flattened: `@babel/core` → `babel-core-7.0.0.tgz` |
+| `packages[].tarball` | filename of the corresponding `.tgz` at the root of the archive. For scoped packages, the `@` and `/` are flattened: `@babel/core` → `babel-core-7.0.0.tgz` |
 
-Every `tarball` filename referenced in `packages` must be present in the zip.
+Every `tarball` filename referenced in `packages` must be present in the archive.
 
 ## How it works
 
@@ -68,7 +68,7 @@ NEXUS_PASSWORD=yourpassword
 
 ## Usage
 
-Drop your `.zip` archive into the `input/` folder, then run:
+Drop your `.tgz` archive into the `input/` folder, then run:
 
 ```bash
 npm run dev
@@ -77,8 +77,8 @@ npm run dev
 Select the archive from the list:
 
 ```
-? Select a zip archive to upload: (Use arrow keys)
-❯ my-packages-2026-03-28.zip
+? Select a tgz archive to upload: (Use arrow keys)
+❯ my-packages-2026-03-28.tgz
 
 Uploading packages to Nexus...
 

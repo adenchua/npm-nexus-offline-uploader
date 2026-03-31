@@ -3,11 +3,11 @@ import path from "path";
 import inquirer from "inquirer";
 import { upload } from "./upload.js";
 
-function listZipFiles(inputDir: string): string[] {
+function listTgzFiles(inputDir: string): string[] {
   try {
     return fs
       .readdirSync(inputDir)
-      .filter((name) => name.toLowerCase().endsWith(".zip") && fs.statSync(path.join(inputDir, name)).isFile())
+      .filter((name) => name.toLowerCase().endsWith(".tgz") && fs.statSync(path.join(inputDir, name)).isFile())
       .sort()
       .reverse()
       .map((name) => path.join(inputDir, name));
@@ -18,19 +18,19 @@ function listZipFiles(inputDir: string): string[] {
 
 async function main() {
   const inputDir = path.resolve(process.cwd(), "input");
-  const zipFiles = listZipFiles(inputDir);
+  const tgzFiles = listTgzFiles(inputDir);
 
-  if (zipFiles.length === 0) {
-    console.log("No .zip files found in input/. Drop a package archive there and try again.");
+  if (tgzFiles.length === 0) {
+    console.log("No .tgz files found in input/. Drop a package archive there and try again.");
     process.exit(0);
   }
 
-  const { zipPath } = await inquirer.prompt([
+  const { archivePath } = await inquirer.prompt([
     {
       type: "list",
-      name: "zipPath",
-      message: "Select a zip archive to upload:",
-      choices: zipFiles.map((f) => ({ name: path.basename(f), value: f })),
+      name: "archivePath",
+      message: "Select a tgz archive to upload:",
+      choices: tgzFiles.map((f) => ({ name: path.basename(f), value: f })),
     },
   ]);
 
@@ -45,7 +45,7 @@ async function main() {
   console.log("Uploading packages to Nexus...\n");
 
   try {
-    const result = await upload(zipPath, { force });
+    const result = await upload(archivePath, { force });
 
     console.log(`\nDone. Succeeded: ${result.succeeded}  Skipped: ${result.skipped}  Failed: ${result.failed}`);
 
