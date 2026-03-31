@@ -44,7 +44,7 @@ For each package in `metadata.json`, the uploader:
 
 ## Prerequisites
 
-- Node.js ≥ 18
+- Node.js ≥ 18 **or** Docker ≥ 20.10 with the Compose plugin
 - A running Sonatype Nexus Repository Manager instance with an npm-hosted repository
 - A Nexus user account with deploy privileges on that repository
 
@@ -65,6 +65,24 @@ NEXUS_REPOSITORY=npm-hosted
 NEXUS_USERNAME=deployer
 NEXUS_PASSWORD=yourpassword
 ```
+
+## Docker
+
+If you prefer not to install Node.js locally, Docker Compose handles everything.
+
+```bash
+cp .env.template .env   # fill in your Nexus credentials
+docker compose build
+```
+
+Drop your `.tgz` archive into `input/`, then run:
+
+```bash
+docker compose run --rm uploader        # normal run
+docker compose run --rm uploader-force  # overwrite existing packages
+```
+
+> `docker compose run` (rather than `up`) is required so the interactive prompt attaches to your terminal correctly.
 
 ## Usage
 
@@ -102,9 +120,19 @@ Done. Succeeded: 2  Skipped: 1  Failed: 0
 
 ## Scripts
 
+### npm
+
 | Command          | Description                        |
 |------------------|------------------------------------|
 | `npm run dev`    | Run with auto-reload (tsx watch)   |
 | `npm run start`  | Run once                           |
 | `npm run build`  | Compile TypeScript to `dist/`      |
 | `npm run format` | Format source files with Prettier  |
+
+### Docker
+
+| Command                                | Description                        |
+|----------------------------------------|------------------------------------|
+| `docker compose build`                 | Build the image                    |
+| `docker compose run --rm uploader`     | Run once                           |
+| `docker compose run --rm uploader-force` | Run once, overwriting existing packages |

@@ -1,0 +1,17 @@
+services:
+  uploader:
+    build: .
+    stdin_open: true
+    tty: true
+    env_file: .env
+    volumes:
+      - ./input:/app/input
+
+  uploader-force:
+    build: .
+    stdin_open: true
+    tty: true
+    env_file: .env
+    volumes:
+      - ./input:/app/input
+    command: ["npx", "tsx", "src/index.ts", "--force"]
