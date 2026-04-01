@@ -56,6 +56,20 @@ npm run format          # format src/ with Prettier
 
 The `:force` variants skip the existence check and overwrite packages already in Nexus. Use them to repair a repository that contains corrupted tarballs from a previous bad upload.
 
+### Docker
+
+```bash
+docker compose build                    # build the image
+docker compose run --rm uploader        # run once (interactive prompt)
+docker compose run --rm uploader-force  # run once, overwriting existing packages
+```
+
+Two services are defined in `docker-compose.yml`:
+- `uploader` — standard run, reads `.env`, mounts `./input`
+- `uploader-force` — same but passes `--force` to skip the existence check
+
+Use `docker compose run` (not `up`) so the interactive `inquirer` prompt attaches to your terminal.
+
 ## Environment variables
 
 Loaded via `tsx --env-file=.env`. See `.env.template` for documented defaults.
